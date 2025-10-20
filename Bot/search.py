@@ -23,7 +23,7 @@ from openai import OpenAI
 import traceback
 load_dotenv()
 
-SERPER_KEY = os.getenv("SERPER_KEY")
+SERPER_KEY = os.getenv("GOOGLE_SERPER_API_KEY")
 ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
 ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
@@ -31,6 +31,28 @@ METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+ASKNEWS_CACHE_ENABLED = os.environ.get("ASKNEWS_CACHE", "").lower() in ("1", "true", "yes", "on")
+ASKNEWS_CACHE_PATH = "/tmp/asknews_cache.json"
+
+try:
+    with open(ASKNEWS_CACHE_PATH, "r", encoding="utf-8") as _f:
+        _asknews_cache: Dict[str, str] = json.load(_f)
+except Exception:
+    _asknews_cache = {}
+
+def _cache_get(key: str) -> str | None:
+    return _asknews_cache.get(key) if ASKNEWS_CACHE_ENABLED else None
+
+def _cache_put(key: str, value: str) -> None:
+    if not ASKNEWS_CACHE_ENABLED:
+        return
+    _asknews_cache[key] = value
+    try:
+        with open(ASKNEWS_CACHE_PATH, "w", encoding="utf-8") as _f:
+            json.dump(_asknews_cache, _f)
+    except Exception as e:
+        write(f"[AskNews cache] Failed to cache: {e}")
 
 assistant_prompt = """
 
@@ -90,7 +112,7 @@ async def summarize_article(article: str, question_details: dict) -> str:
     return await call_gpt(prompt)
 
 
-async def call_asknews(question: str) -> str:
+async def call_asknews(question: str, stage: str, question_details: dict) -> str:
     """
     Use the AskNews `news` endpoint to get news context for your query.
     The full API reference can be found here: https://docs.asknews.app/en/reference#get-/v1/news/search
@@ -99,6 +121,21 @@ async def call_asknews(question: str) -> str:
         ask = AskNewsSDK(
             client_id=ASKNEWS_CLIENT_ID, client_secret=ASKNEWS_SECRET, scopes=set(["news"])
         )
+        qid = question_details.get("id")
+        qset = question_details.get("question_set")
+        qsrc = question_details.get("source")
+        qres = question_details.get("resolution_date")
+        cache_key = f"{qid}::{stage}::{question}".strip()
+
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            print(f"[AskNews] cache_hit stage={stage} set={qset} source={qsrc} id={qid} res_date={qres} query={json.dumps({'q':question})}")
+            return cached
+
+        payload_latest = {"query": question, "n_articles": 8, "return_type": "both", "strategy": "latest news"}
+        payload_knowledge = {"query": question, "n_articles": 8, "return_type": "both", "strategy": "news knowledge"}
+        print(f"[AskNews] request stage={stage} set={qset} source={qsrc} id={qid} res_date={qres} payload={json.dumps(payload_latest)}")
+        print(f"[AskNews] request stage={stage} set={qset} source={qsrc} id={qid} res_date={qres} payload={json.dumps(payload_knowledge)}")
 
         async with aiohttp.ClientSession() as session:
             # Create tasks for both API calls
@@ -142,9 +179,12 @@ async def call_asknews(question: str) -> str:
 
         if not hot_articles and not historical_articles:
             formatted_articles += "No articles were found.\n\n"
+            _cache_put(cache_key, formatted_articles)
             return formatted_articles
 
+        _cache_put(cache_key, formatted_articles)
         return formatted_articles
+
     except Exception as e:
         write(f"[call_asknews] Error: {str(e)}")
         return f"Error retrieving news articles: {str(e)}"
@@ -587,6 +627,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
         # 4) Kick off one asyncio task per query
         tasks = []
         query_sources = []  # Track which source goes with which task
+        stage = "historical" if forecaster_id == "-1" else ("current" if forecaster_id == "0" else f"f{forecaster_id}")
         
         for match in search_queries:
             # match can be ("\"text\"", "text", "Source") or ("text", "Source")
@@ -618,7 +659,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                     )
                 )
             elif source == "Assistant":
-                tasks.append(call_asknews(query))
+                tasks.append(call_asknews(query, stage, question_details))
             elif source == "Agent":
                 tasks.append(agentic_search(query))
 

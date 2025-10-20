@@ -8,3 +8,4 @@ mini_template_benchmark/
 new_benchmark/
 template_benchmark/
 venv/
+variables.mk
