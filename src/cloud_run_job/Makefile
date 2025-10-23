@@ -26,9 +26,9 @@ check :
 
 
 deploy : check main.py
-	mkdir -p $(UPLOAD_DIR)/src/helpers
+	mkdir -p $(UPLOAD_DIR)/src
 	cp main.py $(UPLOAD_DIR)/
-	cp -r $(ROOT_DIR)/src/helpers $(UPLOAD_DIR)/src/helpers
+	cp -r $(ROOT_DIR)/src/helpers $(UPLOAD_DIR)/src
 	cp -r $(ROOT_DIR)/Bot $(UPLOAD_DIR)/
 	cp $(ROOT_DIR)/requirements.txt $(UPLOAD_DIR)/
 

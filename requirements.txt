@@ -13,3 +13,6 @@ readability-lxml
 requests
 scipy
 trafilatura
+google-cloud-storage
+google-cloud-secret-manager
+patchright

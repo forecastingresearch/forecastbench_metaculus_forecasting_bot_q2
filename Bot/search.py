@@ -21,16 +21,44 @@ import random
 import time
 from openai import OpenAI   
 import traceback
+from src.helpers import keys
 load_dotenv()
 
-SERPER_KEY = os.getenv("GOOGLE_SERPER_API_KEY")
-ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
-ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
-METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+def get_serper_key() -> str:
+    key = os.getenv("GOOGLE_SERPER_API_KEY")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("serper") or ""
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+def get_asknews_client_id() -> str:
+    key = os.getenv("ASKNEWS_CLIENT_ID")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("asknews-key-id") or ""
+
+def get_asknews_secret() -> str:
+    key = os.getenv("ASKNEWS_SECRET")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("asknews-key") or ""
+
+def get_perplexity_key() -> str:
+    key = os.getenv("PERPLEXITY_API_KEY")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("perplexity") or ""
+
+def get_metaculus_token() -> str:
+    key = os.getenv("METACULUS_TOKEN")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("metaculus-token") or ""
+
+def get_openai_key() -> str:
+    key = os.getenv("OPENAI_API_KEY")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("openai") or ""
 
 ASKNEWS_CACHE_ENABLED = True
 ASKNEWS_CACHE_PATH = "/tmp/asknews_cache.json"
@@ -135,7 +163,7 @@ async def call_asknews(question: str, stage: str, question_details: dict) -> str
         if not bool(question_details.get("is_dataset")):
             return "AskNews lookup skipped for non-dataset question."
         ask = AskNewsSDK(
-            client_id=ASKNEWS_CLIENT_ID, client_secret=ASKNEWS_SECRET, scopes=set(["news"])
+            client_id=get_asknews_client_id(), client_secret=get_asknews_secret(), scopes=set(["news"])
         )
         qid = question_details.get("id")
         qset = question_details.get("question_set")
@@ -384,7 +412,7 @@ async def call_perplexity(prompt: str) -> str:
     headers = {
         "accept": "application/json",
         "content-type": "application/json",
-        "authorization": f"Bearer {PERPLEXITY_API_KEY}"
+        "authorization": f"Bearer {get_perplexity_key()}"
     }
 
     max_retries = 3
@@ -430,7 +458,7 @@ async def google_search(query, is_news=False, date_before=None):
     search_type = "news" if is_news else "search"
     url = f"https://google.serper.dev/{search_type}"
     headers = {
-        'X-API-KEY': SERPER_KEY,
+        'X-API-KEY': get_serper_key(),
         'Content-Type': 'application/json'
     }
     payload = json.dumps({
@@ -477,7 +505,7 @@ async def google_search(query, is_news=False, date_before=None):
 
 
 async def call_gpt(prompt, step=1):
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = OpenAI(api_key=get_openai_key())
 
     try:
         response = client.responses.create(

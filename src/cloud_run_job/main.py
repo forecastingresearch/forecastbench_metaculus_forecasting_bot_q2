@@ -13,7 +13,6 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 for p in (ROOT, os.path.join(ROOT, "Bot"), os.path.join(ROOT, "src")):
     if p not in sys.path:
         sys.path.insert(0, p)
-from Bot.binary import get_binary_forecast
 from src.helpers import keys, storage
 
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +29,6 @@ SOURCES = {
     "market": ["infer", "manifold", "metaculus", "polymarket"],
     "dataset": ["acled", "dbnomics", "fred", "wikipedia", "yfinance"],
 }
-
 
 def load_secrets_into_environment():
     """Fetch secrets from GCP Secret Manager and load as environment variables."""
@@ -56,6 +54,9 @@ def load_secrets_into_environment():
             logger.warning(
                 f"Secret '{secret_name}' not found; the bot may fail if it needs this key."
             )
+
+load_secrets_into_environment()
+from Bot.binary import get_binary_forecast
 
 def make_writer(meta: Dict[str, Any]):
     prefix = f"[FB question] set={meta.get('question_set')} source={meta.get('source')} id={meta.get('id')}"
