@@ -9,6 +9,10 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+ROOT = os.path.dirname(os.path.abspath(__file__))
+for p in (ROOT, os.path.join(ROOT, "Bot"), os.path.join(ROOT, "src")):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 from Bot.binary import get_binary_forecast
 from src.helpers import keys, storage
 
@@ -182,7 +186,8 @@ def driver(_: Any):
     load_secrets_into_environment()
 
     logger.info("Starting ForecastBench submission job...")
-    forecast_due_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    # forecast_due_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    forecast_due_date = "2025-08-31"
 
     # 1) Download and parse the question set
     question_set_data = download_question_set(forecast_due_date)
