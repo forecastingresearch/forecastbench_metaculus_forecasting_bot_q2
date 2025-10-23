@@ -6,6 +6,8 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import ssl
+import certifi
 
 import pandas as pd
 
@@ -110,7 +112,9 @@ def download_question_set(forecast_due_date: str) -> Dict[str, Any]:
 
     logger.info(f"Downloading question set from {url}...")
     try:
-        urllib.request.urlretrieve(url, local_filename)
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(url, context=ctx, timeout=60) as r, open(local_filename, "wb") as f:
+            f.write(r.read())
         with open(local_filename, "r", encoding="utf-8") as f:
             question_set = json.load(f)
         logger.info("Successfully downloaded and loaded question set.")
@@ -201,6 +205,9 @@ def driver(_: Any):
     questions_df = questions_df[questions_df["id"].apply(lambda x: isinstance(x, str))].reset_index(drop=True)
     after = len(questions_df)
     logger.info(f"Filtered out combination rows for testing: {before - after} removed; {after} standard remain.")
+
+    # 3) TEMP TESTING STEP: Only keep 2 entries until run goes all the way through
+    questions_df = questions_df.iloc[[0, -1]].reset_index(drop=True)
 
     # 3) Generate forecasts
     logger.info(f"Generating forecasts for {len(questions_df)} questions...")

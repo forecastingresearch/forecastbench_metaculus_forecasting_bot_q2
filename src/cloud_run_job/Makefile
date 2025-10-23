@@ -15,6 +15,7 @@ endif
 
 all :
 	$(MAKE) clean
+	$(MAKE) check
 	$(MAKE) deploy
 
 # just in case
@@ -25,9 +26,10 @@ check :
 	@if [ -z "$(GCP_BUCKET_NAME)" ]; then echo "Missing GCP_BUCKET_NAME in variables.mk"; exit 1; fi
 
 
-deploy : check main.py
+deploy : main.py Procfile
+	$(MAKE) check
 	mkdir -p $(UPLOAD_DIR)/src
-	cp main.py $(UPLOAD_DIR)/
+	cp $^ $(UPLOAD_DIR)/
 	cp -r $(ROOT_DIR)/src/helpers $(UPLOAD_DIR)/src
 	cp -r $(ROOT_DIR)/Bot $(UPLOAD_DIR)/
 	cp $(ROOT_DIR)/requirements.txt $(UPLOAD_DIR)/
@@ -36,8 +38,11 @@ deploy : check main.py
 		--project $(CLOUD_PROJECT) \
 		--region $(CLOUD_DEPLOY_REGION) \
 		--source $(UPLOAD_DIR) \
+		--tasks 1 \
+		--parallelism 1 \
 		--task-timeout 24h \
 		--memory 2Gi \
+		--max-retries 0 \
 		--service-account $(WORKFLOW_SERVICE_ACCOUNT) \
 		--set-env-vars "$(ENV_VARS)" \
 
