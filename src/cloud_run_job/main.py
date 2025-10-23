@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 ORGANIZATION_NAME = "Metaculus"
 MODEL_NAME = "Panshul42 (Winner of Metaculus 2025Q2 AI Tournament)"
-MODEL_ORGANIZATION = "ForecastBench"
+MODEL_ORGANIZATION = "Metaculus"
 
 GCP_BUCKET_NAME = os.environ.get("GCP_BUCKET_NAME", "")
 FORECAST_FOLDER = os.environ.get("FORECAST_FOLDER", "")
@@ -71,14 +71,15 @@ def build_question_details(q: pd.Series, question_set_name: str, resolution_date
         "id": q.get("id"),
         "source": q.get("source"),
         "question_set": question_set_name,
+        "is_dataset": q.get("source") not in ["infer", "manifold", "metaculus", "polymarket"],
     }
     if resolution_date is not None:
         d["resolution_date"] = resolution_date
-    if q.get("source") in SOURCES["market"]:
-        if "freeze" in q:
-            d["market_freeze"] = q["freeze"]
-        elif "market_freeze" in q:
-            d["market_freeze"] = q["market_freeze"]
+    if d["is_dataset"]:
+        if "freeze_datetime_value" in q:
+            d["freeze_datetime_value"] = q["freeze_datetime_value"]
+        if "freeze_datetime_value_explanation" in q:
+            d["freeze_datetime_value_explanation"] = q["freeze_datetime_value_explanation"]
     return d
 
 def get_prediction_from_bot(question_details: Dict[str, Any], writer) -> Optional[float]:
@@ -209,7 +210,7 @@ def driver(_: Any):
         "forecasts": forecasts_list,
     }
 
-    submission_filename = f"{forecast_due_date}.{ORGANIZATION_NAME}.1.json"
+    submission_filename = f"{forecast_due_date}.{ORGANIZATION_NAME}.Metaculus.Panshul42.json"
     local_filepath = f"/tmp/{submission_filename}"
     with open(local_filepath, "w", encoding="utf-8") as f:
         json.dump(submission_data, f, indent=4)

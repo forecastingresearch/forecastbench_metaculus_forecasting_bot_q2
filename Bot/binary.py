@@ -50,7 +50,8 @@ async def get_binary_forecast(question_details, write=print):
     background = question_details["description"]
     fine_print = question_details["fine_print"]
     resolution_date = question_details.get("resolution_date")
-    market_freeze = question_details.get("market_freeze")
+    if resolution_date:
+        resolution_criteria = f"{resolution_criteria}\n\nForecast horizon: {resolution_date}"  # changed
 
     async def format_and_call_gpt(prompt_template, stage: str):
         content = prompt_template.format(
@@ -59,8 +60,6 @@ async def get_binary_forecast(question_details, write=print):
             background=background,
             resolution_criteria=resolution_criteria,
             fine_print=fine_print,
-            resolution_date=resolution_date,
-            market_freeze=market_freeze,
         )
         log_prompt("gpt-o3", stage, content, question_details, write)
         return content, await call_gpt_o3(content)
@@ -87,16 +86,9 @@ async def get_binary_forecast(question_details, write=print):
         resolution_criteria=resolution_criteria,
         fine_print=fine_print,
         context=context_historical,
-        resolution_date=resolution_date,
-        market_freeze=market_freeze,
     )
 
     async def run_prompt1():
-        log_prompt("claude", "prompt1_f1", prompt1, question_details, write)  # changed
-        log_prompt("claude", "prompt1_f2", prompt1, question_details, write)  # changed
-        log_prompt("gpt-o4-mini", "prompt1_f3", prompt1, question_details, write)  # changed
-        log_prompt("gpt-o3", "prompt1_f4", prompt1, question_details, write)  # changed
-        log_prompt("gpt-o3", "prompt1_f5", prompt1, question_details, write)  # changed
         return await asyncio.gather(
             call_claude(prompt1),
             call_claude(prompt1),
@@ -125,8 +117,6 @@ async def get_binary_forecast(question_details, write=print):
             resolution_criteria=resolution_criteria,
             fine_print=fine_print,
             context=context_map[f_id],
-            resolution_date=resolution_date,
-            market_freeze=market_freeze,
         )
 
     async def run_prompt2():
@@ -135,11 +125,6 @@ async def get_binary_forecast(question_details, write=print):
         p3 = format_prompt2("3")
         p4 = format_prompt2("4")
         p5 = format_prompt2("5")
-        log_prompt("claude", "prompt2_f1", p1, question_details, write)
-        log_prompt("claude", "prompt2_f2", p2, question_details, write)
-        log_prompt("gpt-o4-mini", "prompt2_f3", p3, question_details, write)
-        log_prompt("gpt-o3", "prompt2_f4", p4, question_details, write)
-        log_prompt("gpt-o3", "prompt2_f5", p5, question_details, write)
         return await asyncio.gather(
             call_claude(p1),
             call_claude(p2),
@@ -147,6 +132,7 @@ async def get_binary_forecast(question_details, write=print):
             call_gpt_o3(p4),
             call_gpt_o3(p5),
         )
+    
     results_prompt2 = await run_prompt2()
 
     probabilities = []

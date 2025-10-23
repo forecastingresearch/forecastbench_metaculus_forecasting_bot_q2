@@ -32,7 +32,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-ASKNEWS_CACHE_ENABLED = os.environ.get("ASKNEWS_CACHE", "").lower() in ("1", "true", "yes", "on")
+ASKNEWS_CACHE_ENABLED = True
 ASKNEWS_CACHE_PATH = "/tmp/asknews_cache.json"
 
 try:
@@ -41,11 +41,13 @@ try:
 except Exception:
     _asknews_cache = {}
 
-def _cache_get(key: str) -> str | None:
-    return _asknews_cache.get(key) if ASKNEWS_CACHE_ENABLED else None
+def _cache_get(key: str, *, is_dataset: bool) -> str | None:
+    if not (ASKNEWS_CACHE_ENABLED and is_dataset):
+        return None
+    return _asknews_cache.get(key)
 
-def _cache_put(key: str, value: str) -> None:
-    if not ASKNEWS_CACHE_ENABLED:
+def _cache_put(key: str, value: str, *, is_dataset: bool) -> None:
+    if not (ASKNEWS_CACHE_ENABLED and is_dataset):
         return
     _asknews_cache[key] = value
     try:
@@ -116,20 +118,35 @@ async def call_asknews(question: str, stage: str, question_details: dict) -> str
     """
     Use the AskNews `news` endpoint to get news context for your query.
     The full API reference can be found here: https://docs.asknews.app/en/reference#get-/v1/news/search
+
+    Args
+    question (str): The raw search string to send to AskNews.
+    stage (str): The stage of the forecasting pipeline (either "historical" or "current").
+                    Used for logging and caching to distinguish between context phases.
+    question_details (dict): Metadata for the current question (e.g., question_set_name,
+                                question_id, source, etc.), used to include identifying info
+                                in logs and cache keys.
+
+    Returns
+    str: The formatted AskNews response or a cached result if available.
+
     """
     try:
+        if not bool(question_details.get("is_dataset")):
+            return "AskNews lookup skipped for non-dataset question."
         ask = AskNewsSDK(
             client_id=ASKNEWS_CLIENT_ID, client_secret=ASKNEWS_SECRET, scopes=set(["news"])
         )
         qid = question_details.get("id")
         qset = question_details.get("question_set")
         qsrc = question_details.get("source")
+        is_dataset = bool(question_details.get("is_dataset"))
         qres = question_details.get("resolution_date")
-        cache_key = f"{qid}::{stage}::{question}".strip()
+        cache_key = f"{qid}::{question}".strip()
 
-        cached = _cache_get(cache_key)
+        cached = _cache_get(cache_key, is_dataset=is_dataset)
         if cached is not None:
-            print(f"[AskNews] cache_hit stage={stage} set={qset} source={qsrc} id={qid} res_date={qres} query={json.dumps({'q':question})}")
+            print(f"[AskNews] cache_hit stage={stage} set={qset} source={qsrc} id={qid} query={json.dumps({'q':question})}")
             return cached
 
         payload_latest = {"query": question, "n_articles": 8, "return_type": "both", "strategy": "latest news"}
@@ -179,10 +196,10 @@ async def call_asknews(question: str, stage: str, question_details: dict) -> str
 
         if not hot_articles and not historical_articles:
             formatted_articles += "No articles were found.\n\n"
-            _cache_put(cache_key, formatted_articles)
+            _cache_put(cache_key, formatted_articles,is_dataset=is_dataset)
             return formatted_articles
 
-        _cache_put(cache_key, formatted_articles)
+        _cache_put(cache_key, formatted_articles,is_dataset=is_dataset)
         return formatted_articles
 
     except Exception as e:
@@ -659,7 +676,10 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                     )
                 )
             elif source == "Assistant":
-                tasks.append(call_asknews(query, stage, question_details))
+                if bool(question_details.get("is_dataset")):
+                    tasks.append(call_asknews(query, stage, question_details))
+                else:
+                    write(f"Forecaster {forecaster_id}: Skipping AskNews for market question")
             elif source == "Agent":
                 tasks.append(agentic_search(query))
 
