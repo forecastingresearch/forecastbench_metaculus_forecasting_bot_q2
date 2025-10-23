@@ -9,3 +9,4 @@ new_benchmark/
 template_benchmark/
 venv/
 variables.mk
+upload
