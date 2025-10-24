@@ -1,4 +1,5 @@
 aiohttp
+anthropic
 asknews
 beautifulsoup4
 boilerpy3
