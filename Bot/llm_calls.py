@@ -51,9 +51,6 @@ async def call_anthropic_api(prompt, max_tokens=16000, max_retries=7, cached_con
                 elif t == "thinking":
                     thinking = getattr(block, "thinking", "") or thinking
 
-            if thinking:
-                print(f"Claude's thinking: {thinking}")
-
             if text:
                 return text
 
@@ -140,77 +137,3 @@ async def call_gpt_o3(prompt):
     except Exception as e:
         write(f"Error in call_gpt_o3: {str(e)}")
         return f"Error generating response: {str(e)}"
-
-'''
-async def call_gpt_o3(prompt):
-    # Temporarily short metaculus proxy using personal credits.
-    ans = await call_gpt_o3_personal(prompt)
-    return ans
-    try:
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
-        
-        data = {
-            "model": "o3",
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        
-        timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    write(f"API error (status {response.status}): {error_text}")
-                    response.raise_for_status()
-                
-                result = await response.json()
-                
-                answer = result['choices'][0]['message']['content']
-                if answer is None:
-                    raise ValueError("No answer returned from GPT")
-                return answer
-                
-    except Exception as e:
-        write(f"Error in call_gpt: {str(e)}")
-        return f"Error generating response: {str(e)}"
-'''
-
-'''
-async def call_gpt_o4_mini(prompt):
-    prompt = gpt_context + "\n" + prompt
-    try:
-        url = "https://llm-proxy.metaculus.com/proxy/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Token {METACULUS_TOKEN}"
-        }
-        
-        data = {
-            "model": "o4-mini",
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        
-        timeout = ClientTimeout(total=300)  # 5 minutes total timeout
-        
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    write(f"API error (status {response.status}): {error_text}")
-                    response.raise_for_status()
-                
-                result = await response.json()
-                
-                answer = result['choices'][0]['message']['content']
-                if answer is None:
-                    raise ValueError("No answer returned from GPT")
-                return answer
-                
-    except Exception as e:
-        write(f"Error in call_gpt: {str(e)}")
-        return f"Error generating response: {str(e)}"
-'''

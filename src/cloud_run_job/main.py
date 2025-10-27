@@ -20,7 +20,7 @@ from src.helpers import keys, storage
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ORGANIZATION_NAME = "Metaculus"
+ORGANIZATION_NAME = "ForecastBench"
 MODEL_NAME = "Panshul42 (Winner of Metaculus 2025Q2 AI Tournament)"
 MODEL_ORGANIZATION = "Metaculus"
 
@@ -158,7 +158,6 @@ def create_all_forecasts(questions_df: pd.DataFrame, question_set_name: str) -> 
                 "forecast": prediction,
                 "resolution_date": None,
                 "reasoning": None,
-                "direction": None,
             })
             emitted += 1
 
@@ -178,7 +177,6 @@ def create_all_forecasts(questions_df: pd.DataFrame, question_set_name: str) -> 
                     "forecast": prediction,
                     "resolution_date": res_date,
                     "reasoning": None,
-                    "direction": None,
                 })
                 emitted += 1
 
@@ -192,22 +190,17 @@ def driver(_: Any):
 
     logger.info("Starting ForecastBench submission job...")
     # forecast_due_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    forecast_due_date = "2025-08-31"
+    forecast_due_date = "2025-10-26"
 
     # 1) Download and parse the question set
     question_set_data = download_question_set(forecast_due_date)
     question_set_name = question_set_data["question_set"]
     questions_df = pd.DataFrame(question_set_data["questions"])
 
-    # 2) TEMP TESTING STEP: Remove combination rows.
-    # Combination questions show up as non-string IDs; keep only "standard" rows.
-    before = len(questions_df)
-    questions_df = questions_df[questions_df["id"].apply(lambda x: isinstance(x, str))].reset_index(drop=True)
-    after = len(questions_df)
-    logger.info(f"Filtered out combination rows for testing: {before - after} removed; {after} standard remain.")
-
-    # 3) TEMP TESTING STEP: Only keep 2 entries until run goes all the way through
-    questions_df = questions_df.iloc[[0, -1]].reset_index(drop=True)
+    # 2) TEMP TESTING STEP: Only forecast 6 questions
+    market_sample = questions_df[questions_df["source"].isin(SOURCES["market"])].sample(3)
+    dataset_sample = questions_df[questions_df["source"].isin(SOURCES["dataset"])].sample(3)
+    questions_df = pd.concat([market_sample, dataset_sample], ignore_index=True)
 
     # 3) Generate forecasts
     logger.info(f"Generating forecasts for {len(questions_df)} questions...")
@@ -223,7 +216,7 @@ def driver(_: Any):
         "forecasts": forecasts_list,
     }
 
-    submission_filename = f"{forecast_due_date}.{ORGANIZATION_NAME}.Metaculus.Panshul42.json"
+    submission_filename = f"{forecast_due_date}.{ORGANIZATION_NAME}.{MODEL_ORGANIZATION}.Panshul42.json"
     local_filepath = f"/tmp/{submission_filename}"
     with open(local_filepath, "w", encoding="utf-8") as f:
         json.dump(submission_data, f, indent=4)
