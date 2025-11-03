@@ -21,16 +21,68 @@ import random
 import time
 from openai import OpenAI   
 import traceback
+from src.helpers import keys
 load_dotenv()
 
-SERPER_KEY = os.getenv("SERPER_KEY")
-ASKNEWS_CLIENT_ID = os.getenv("ASKNEWS_CLIENT_ID")
-ASKNEWS_SECRET = os.getenv("ASKNEWS_SECRET")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
-METACULUS_TOKEN = os.getenv("METACULUS_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+def get_serper_key() -> str:
+    key = os.getenv("GOOGLE_SERPER_API_KEY")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("serper") or ""
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+def get_asknews_client_id() -> str:
+    key = os.getenv("ASKNEWS_CLIENT_ID")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("asknews-key-id") or ""
+
+def get_asknews_secret() -> str:
+    key = os.getenv("ASKNEWS_SECRET")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("asknews-key") or ""
+
+def get_perplexity_key() -> str:
+    key = os.getenv("PERPLEXITY_API_KEY")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("perplexity") or ""
+
+def get_metaculus_token() -> str:
+    key = os.getenv("METACULUS_TOKEN")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("metaculus-token") or ""
+
+def get_openai_key() -> str:
+    key = os.getenv("OPENAI_API_KEY")
+    if key:
+        return key
+    return keys.get_secret_that_may_not_exist("openai") or ""
+
+ASKNEWS_CACHE_ENABLED = True
+ASKNEWS_CACHE_PATH = "/tmp/asknews_cache.json"
+
+try:
+    with open(ASKNEWS_CACHE_PATH, "r", encoding="utf-8") as _f:
+        _asknews_cache: Dict[str, str] = json.load(_f)
+except Exception:
+    _asknews_cache = {}
+
+def _cache_get(key: str, *, is_dataset: bool) -> str | None:
+    if not (ASKNEWS_CACHE_ENABLED and is_dataset):
+        return None
+    return _asknews_cache.get(key)
+
+def _cache_put(key: str, value: str, *, is_dataset: bool) -> None:
+    if not (ASKNEWS_CACHE_ENABLED and is_dataset):
+        return
+    _asknews_cache[key] = value
+    try:
+        with open(ASKNEWS_CACHE_PATH, "w", encoding="utf-8") as _f:
+            json.dump(_asknews_cache, _f)
+    except Exception as e:
+        write(f"[AskNews cache] Failed to cache: {e}")
 
 assistant_prompt = """
 
@@ -90,15 +142,45 @@ async def summarize_article(article: str, question_details: dict) -> str:
     return await call_gpt(prompt)
 
 
-async def call_asknews(question: str) -> str:
+async def call_asknews(question: str, stage: str, question_details: dict) -> str:
     """
     Use the AskNews `news` endpoint to get news context for your query.
     The full API reference can be found here: https://docs.asknews.app/en/reference#get-/v1/news/search
+
+    Args
+    question (str): The raw search string to send to AskNews.
+    stage (str): The stage of the forecasting pipeline (either "historical" or "current").
+                    Used for logging and caching to distinguish between context phases.
+    question_details (dict): Metadata for the current question (e.g., question_set_name,
+                                question_id, source, etc.), used to include identifying info
+                                in logs and cache keys.
+
+    Returns
+    str: The formatted AskNews response or a cached result if available.
+
     """
     try:
+        if not bool(question_details.get("is_dataset")):
+            return "AskNews lookup skipped for non-dataset question."
         ask = AskNewsSDK(
-            client_id=ASKNEWS_CLIENT_ID, client_secret=ASKNEWS_SECRET, scopes=set(["news"])
+            client_id=get_asknews_client_id(), client_secret=get_asknews_secret(), scopes=set(["news"])
         )
+        qid = question_details.get("id")
+        qset = question_details.get("question_set")
+        qsrc = question_details.get("source")
+        is_dataset = bool(question_details.get("is_dataset"))
+        qres = question_details.get("resolution_date")
+        cache_key = f"{qid}::{question}".strip()
+
+        cached = _cache_get(cache_key, is_dataset=is_dataset)
+        if cached is not None:
+            print(f"[AskNews] cache_hit stage={stage} set={qset} source={qsrc} id={qid} query={json.dumps({'q':question})}")
+            return cached
+
+        payload_latest = {"query": question, "n_articles": 8, "return_type": "both", "strategy": "latest news"}
+        payload_knowledge = {"query": question, "n_articles": 8, "return_type": "both", "strategy": "news knowledge"}
+        print(f"[AskNews] request stage={stage} set={qset} source={qsrc} id={qid} res_date={qres} payload={json.dumps(payload_latest)}")
+        print(f"[AskNews] request stage={stage} set={qset} source={qsrc} id={qid} res_date={qres} payload={json.dumps(payload_knowledge)}")
 
         async with aiohttp.ClientSession() as session:
             # Create tasks for both API calls
@@ -142,9 +224,12 @@ async def call_asknews(question: str) -> str:
 
         if not hot_articles and not historical_articles:
             formatted_articles += "No articles were found.\n\n"
+            _cache_put(cache_key, formatted_articles,is_dataset=is_dataset)
             return formatted_articles
 
+        _cache_put(cache_key, formatted_articles,is_dataset=is_dataset)
         return formatted_articles
+
     except Exception as e:
         write(f"[call_asknews] Error: {str(e)}")
         return f"Error retrieving news articles: {str(e)}"
@@ -327,7 +412,7 @@ async def call_perplexity(prompt: str) -> str:
     headers = {
         "accept": "application/json",
         "content-type": "application/json",
-        "authorization": f"Bearer {PERPLEXITY_API_KEY}"
+        "authorization": f"Bearer {get_perplexity_key()}"
     }
 
     max_retries = 3
@@ -373,7 +458,7 @@ async def google_search(query, is_news=False, date_before=None):
     search_type = "news" if is_news else "search"
     url = f"https://google.serper.dev/{search_type}"
     headers = {
-        'X-API-KEY': SERPER_KEY,
+        'X-API-KEY': get_serper_key(),
         'Content-Type': 'application/json'
     }
     payload = json.dumps({
@@ -420,7 +505,7 @@ async def google_search(query, is_news=False, date_before=None):
 
 
 async def call_gpt(prompt, step=1):
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = OpenAI(api_key=get_openai_key())
 
     try:
         response = client.responses.create(
@@ -587,6 +672,7 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
         # 4) Kick off one asyncio task per query
         tasks = []
         query_sources = []  # Track which source goes with which task
+        stage = "historical" if forecaster_id == "-1" else ("current" if forecaster_id == "0" else f"f{forecaster_id}")
         
         for match in search_queries:
             # match can be ("\"text\"", "text", "Source") or ("text", "Source")
@@ -618,7 +704,10 @@ async def process_search_queries(response: str, forecaster_id: str, question_det
                     )
                 )
             elif source == "Assistant":
-                tasks.append(call_asknews(query))
+                if bool(question_details.get("is_dataset")):
+                    tasks.append(call_asknews(query, stage, question_details))
+                else:
+                    write(f"Forecaster {forecaster_id}: Skipping AskNews for market question")
             elif source == "Agent":
                 tasks.append(agentic_search(query))
 

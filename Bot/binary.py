@@ -37,6 +37,11 @@ def extract_probability_from_response_as_percentage_not_decimal(forecast_text: s
         return min(99, max(1, number))
     raise ValueError(f"Could not extract prediction from response: {forecast_text}")
 
+def log_prompt(model: str, stage: str, prompt: str, details: dict, write):
+    meta = f"set={details.get('question_set')} source={details.get('source')} id={details.get('id')}"
+    if details.get("resolution_date"):
+        meta += f" res_date={details['resolution_date']}"
+    write(f"[LLM] model={model} stage={stage} meta=({meta})\nPROMPT:\n{prompt}\n---")
 
 async def get_binary_forecast(question_details, write=print):
     today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -44,8 +49,11 @@ async def get_binary_forecast(question_details, write=print):
     resolution_criteria = question_details["resolution_criteria"]
     background = question_details["description"]
     fine_print = question_details["fine_print"]
+    resolution_date = question_details.get("resolution_date")
+    if resolution_date:
+        resolution_criteria = f"{resolution_criteria}\n\nForecast horizon: {resolution_date}"  # changed
 
-    async def format_and_call_gpt(prompt_template):
+    async def format_and_call_gpt(prompt_template, stage: str):
         content = prompt_template.format(
             title=title,
             today=today,
@@ -53,10 +61,11 @@ async def get_binary_forecast(question_details, write=print):
             resolution_criteria=resolution_criteria,
             fine_print=fine_print,
         )
+        log_prompt("gpt-o3", stage, content, question_details, write)
         return content, await call_gpt_o3(content)
 
-    historical_task = asyncio.create_task(format_and_call_gpt(BINARY_PROMPT_historical))
-    current_task = asyncio.create_task(format_and_call_gpt(BINARY_PROMPT_current))
+    historical_task = asyncio.create_task(format_and_call_gpt(BINARY_PROMPT_historical, "historical_context"))
+    current_task = asyncio.create_task(format_and_call_gpt(BINARY_PROMPT_current, "current_context"))
     (historical_prompt, historical_output), (current_prompt, current_output) = await asyncio.gather(
         historical_task, current_task
     )
@@ -81,11 +90,11 @@ async def get_binary_forecast(question_details, write=print):
 
     async def run_prompt1():
         return await asyncio.gather(
-            call_claude(prompt1),      # forecaster 1
-            call_claude(prompt1),      # forecaster 2
-            call_gpt_o4_mini(prompt1), # forecaster 3
-            call_gpt_o3(prompt1), # forecaster 4
-            call_gpt_o3(prompt1),      # forecaster 5
+            call_claude(prompt1),
+            call_claude(prompt1),
+            call_gpt_o4_mini(prompt1),
+            call_gpt_o3(prompt1),
+            call_gpt_o3(prompt1),
         )
 
     results_prompt1 = await run_prompt1()
@@ -111,14 +120,19 @@ async def get_binary_forecast(question_details, write=print):
         )
 
     async def run_prompt2():
+        p1 = format_prompt2("1")
+        p2 = format_prompt2("2")
+        p3 = format_prompt2("3")
+        p4 = format_prompt2("4")
+        p5 = format_prompt2("5")
         return await asyncio.gather(
-            call_claude(format_prompt2("1")),
-            call_claude(format_prompt2("2")),
-            call_gpt_o4_mini(format_prompt2("3")),
-            call_gpt_o3(format_prompt2("4")),
-            call_gpt_o3(format_prompt2("5")),
+            call_claude(p1),
+            call_claude(p2),
+            call_gpt_o4_mini(p3),
+            call_gpt_o3(p4),
+            call_gpt_o3(p5),
         )
-
+    
     results_prompt2 = await run_prompt2()
 
     probabilities = []
